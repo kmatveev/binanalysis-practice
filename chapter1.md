@@ -45,8 +45,15 @@ Compile a program and check all use cases:
 Let's now imagine that you don't know the source code and don't know a correct password. Your task is to get past password protection. 
 
 Well, since this program stores correct password in program's code in plain text, and such strings go in resulting executable binary file without any change, it should be possible to find a correct password just by looking into a binary file. For such a small program you can simplify your task even more by searching for a string which is printed by a program, like "Wrong password", because it's natural for a program to store all strings together
+
+Most hex editors provide "search text" functionality:
+
  ![](pics/hxd-text-search.png)
- ![](pics/hxd-text-found.png) 
+
+Indeed, a password text is stored not far from "Wrong password" string.
+
+ ![](pics/hxd-text-found.png)
+ 
 However, the only thing we can do with such approach is to find a correct password. For more complex tasks, such as to alter a program so it can take any password as correct, we need tools.
 
 ## Using disassembler
@@ -55,20 +62,34 @@ Overall idea of using a disassmebler is following: we will disassemble program's
 
 IDA is a great commercial disassembler, which has free versions available, and they will perfectly work for us. I'm using version 7.0
 After starting IDA and opening a binary executable file we should search for "Wrong password" string.
- ![](pics/ida-text-search.png)
- ![](pics/ida-text-found.png)
+
+ ![](pics/ida-search-text.png)
+
+ ![](pics/ida-search-text-dlg.png)
+
+ ![](pics/ida-found-text-xref.png)
+
 Since our program is small, IDA will find this string quite quickly. A very useful feature of IDA is that it was able to find a place in code which reads a first address of our string. This place is shown as cross-reference (XREF), and we can quickly get there by double-clicking on it. 
+
  ![](pics/ida-disassembly.png)
+
 OK, we can see that if we change instruction "test eax, eax" to "xor eax, eax" then program will always go to print "Password is correct" message. So now our task is to locate a machine code for this instruction in binary file and change it.
 IDA provides a full hexadecimal virtual address of an instruction to be changed: "0000000140001055", and it also provides a section in binary executable where this instruction is stored: ".text".  
 
 Now we should learn important information on how Windows loader maps content of binary executable file into virtual memory space of a process. A binary executable file consists of several "sections", and each section is mapped to virtual memory area starting with specified virtual address. However, these adresses are not specified exactly. Instead, they are represented as offsets from common virtual address called  "Image base".  So, to get virtual address of a section we need to add section's offset to image base. Fortunatelly, these numbers are provided by IDA at the beginning of disassembly
+
  ![](pics/ida-disassembly-header.png)
 
 So, hexadecimal virtual address of ".text" section is 140001000. We also know that hexadecimalvirtual address of a byte we want to change is 0000000140001055,  so offset of a byte from beginning of a ".text" section is 55. Also IDA gives us hexadecimal offset of ".text" section in binary executable file, which is 400. So, hexadecimal offset of a byte in executable file is 455. 
+
  ![](pics/hxd-patching.png)
+
 Let's change value "85" to "33". Now let's save a modified program and check if it works.
+
  ![](pics/prog-disabled.png)
+
 There is also another, simpler way to patch a program, by using hexadecimal editor of IDA, which has a convenience of showing virtual addresses, and which will automatically highlight bytes which correspond to instruction selected in disassembly view. You can edit hexadecimal value. However, free version of IDA will not allow you to produce a working executable from modified content.
+
  ![](pics/ida-patching-instruction.png)
+
  ![](pics/ida-patching-bytes.png)
