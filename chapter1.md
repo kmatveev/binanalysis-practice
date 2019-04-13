@@ -1,4 +1,4 @@
-# Chapter 1: console Win32 app
+# Chapter 1: Win32 console application
 
 A simple program which we will examine here is a "guess password" program. It should display a promtpt at console asking for a password, and then read a user's input. If password matches hardcoded value, then user is congratulated, otherwise password is asked again and again.
 Our first task will be to make a working program, and then we will try different ways to alter the program so it allows any password
@@ -46,9 +46,7 @@ Let's now imagine that you don't know the source code and don't know a correct p
 
 Well, since this program stores correct password in program's code in plain text, and such strings go in resulting executable binary file without any change, it should be possible to find a correct password just by looking into a binary file. For such a small program you can simplify your task even more by searching for a string which is printed by a program, like "Wrong password", because it's natural for a program to store all strings together
 
-Most hex editors provide "search text" functionality:
-
- ![](pics/hxd-text-search.png)
+Most hex editors provide "search text" functionality. We will use HxD editor, but you can use any other.
 
 Indeed, a password text is stored not far from "Wrong password" string.
 
@@ -62,10 +60,6 @@ Overall idea of using a disassmebler is following: we will disassemble program's
 
 IDA is a great commercial disassembler, which has free versions available, and they will perfectly work for us. I'm using version 7.0
 After starting IDA and opening a binary executable file we should search for "Wrong password" string.
-
- ![](pics/ida-search-text.png)
-
- ![](pics/ida-search-text-dlg.png)
 
  ![](pics/ida-found-text-xref.png)
 
@@ -93,3 +87,42 @@ There is also another, simpler way to patch a program, by using hexadecimal edit
  ![](pics/ida-patching-instruction.png)
 
  ![](pics/ida-patching-bytes.png)
+
+
+## Using debugger
+
+Debuggers are interactive tools which let you control execution of binary files, and provide detailed information about execution state.
+While IDA has performed a static analysis of binary executable, which allowed us to follow cross-reference from "Wrong password" string to a code which printed it, debugger allows to place a breakpoint at the start of "Wrong password" string, which will stop program's execution when program will attempt to access the string. Then we will use step-by-step execution of a program to get to the point where password is analyzed. 
+We are goiing to use an approach quite similar to previous one: try to find "Wrong password" string in a memory of a process, then place a breakpoint at that location.
+ 
+We will use WinDbg debugger which is a part of Windows debugging tools package.
+
+ ![](pics/windbg-modules-and-header.png)
+
+Start the debugger, and use "open executable" command to start a new process. Debugger will stop at some place inside Windows system libraries, before execution of our binary file has started. This moment is a right time to place a breakpoint. To do that, however, we need to calculate an address of memory location where we want to place a breakpoint.
+First, use "lm" command to list modules of a process which we are debugging. Among names of system dlls we will see a specific name corresponding to our binary executable file. We should also read starting virtual address of a module. Now we can use command "!dh <modulename>" to display a header of binary executable file. A header contains an offset of entry point of our program. To calculate full virtual address of an entry point we need to add start address of a module to offset of an entry point.  Please note that start address of a module equals to value of "Image base" field of a header, but this value is not the same as in binary executable file, it was updated by Windows loader.
+Since we have calculated full virtual address of program's entry point, let's place a code execution breakpoint using command "bp <addr>", and then ask debugger to run a program with "g" command, until breakpoint will be triggerred.
+
+ ![](pics/windbg-entry-point-bp.png)
+
+When breakpoint will be hit, we know that our program is ready to be started. 
+
+Now we should search memory for string "Wrong password". Command "s -a <start> l<length> <string>" will search ASCII string in memory starting from <start> address. We will supply image base address as start address, and length to be 100000 bytes. As soon as our search will be succesfull, we will use "db <start> l<length> command to display memory content around found string.
+
+ ![](pics/windbg-search-display-memory.png)
+
+Excellent, we can even see correct password! But our aim here is to track the code which accesses string "Wrong password". We can achieve that by using memory read breakpoint placed with command "ba r <length> <addr>". After placing a breakpoint we need to resume program execution with "g" command.
+
+ ![](pics/windbg-memaccess-breakpoint.png)
+
+When breakpoint will be triggered, it is a good idea to check call stack and see which function was reading the memory. Call stack is displayed by "k" command. Since call stack is deep, we can assume that we are inside some system function which prints a string to console. To check this, we can use "u" command to display disassembly
+Main difference between usage of disassembler and debugger is that in debugger we have found a string and then IDA was looking for usages of address of that string. However, in debugger we have breakpoint on memory access, and the address of string came some long way before memory was accessed.
+To run program till the end of current function we should use "gu" command. Next function returns immediatelly after we returned to it
+
+ ![](pics/windbg-disassembly-goup.png)
+
+By using paper and pencil to track currently executing function, we will see that breakpoint will be hit a second time if we use "gu" command. But finally we will get to top level loop:
+
+ ![](pics/windbg-top-level-loop.png)
+
+This gives us a virtual address of instruction "test ax, ax". By substracting image base address and section offset, we can calculate byte offset from beginning of a section. Based on that number, we can calculate byte offset in file.
